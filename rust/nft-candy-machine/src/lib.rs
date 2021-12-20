@@ -15,9 +15,9 @@ use {
         },
     },
     spl_token::state::Mint,
-    std::cell::Ref,
+    std::{cell::Ref, mem},
 };
-anchor_lang::declare_id!("cndyAnrLdpjq1Ssp1z8xxDsB8dxe7u4HL5Nxi2K5WXZ");
+anchor_lang::declare_id!("BKYuLvhWdJjJctATHxi9VL1eUTzQnv1dK5zTVGSayiZi");
 
 const PREFIX: &str = "candy_machine";
 #[program]
@@ -31,6 +31,34 @@ pub mod nft_candy_machine {
 
     pub fn mint_nft<'info>(ctx: Context<'_, '_, '_, 'info, MintNFT<'info>>) -> ProgramResult {
         let candy_machine = &mut ctx.accounts.candy_machine;
+
+        if let Some(whitelist_address) = candy_machine.whitelist.clone() {
+            let ra_len = ctx.remaining_accounts.len();
+            if ra_len > 0 {
+                let whitelist_info = match ctx.remaining_accounts.get(ra_len - 1) {
+                    Some(acc_info) => acc_info,
+                    None => return Err(ErrorCode::NoWhitelistAccountProvided.into()),
+                };
+                let whitelist = match Account::<WhiteList>::try_from(whitelist_info) {
+                    Ok(whitelist_account) => whitelist_account,
+                    _ => return Err(ErrorCode::InvalidWhitelistAccountProvideed.into()),
+                };
+
+                if whitelist.key() != whitelist_address {
+                    return Err(ErrorCode::WhitelistAddressesDosNotMatch.into());
+                }
+
+                if whitelist.addresses.is_empty() == false {
+                    let update_authority = ctx.accounts.update_authority.key;
+                    if whitelist.addresses.contains(update_authority) == false {
+                        return Err(ErrorCode::NotWhitelistedAddress.into());
+                    }
+                }
+            } else {
+                return Err(ErrorCode::NoWhitelistAccountProvided.into());
+            }
+        }
+
         let config = &ctx.accounts.config;
         let clock = &ctx.accounts.clock;
 
@@ -371,17 +399,23 @@ pub mod nft_candy_machine {
         ctx: Context<InitializeCandyMachine>,
         bump: u8,
         data: CandyMachineData,
+        whitelist_address: Option<Pubkey>,
     ) -> ProgramResult {
         let candy_machine = &mut ctx.accounts.candy_machine;
 
         if data.uuid.len() != 6 {
             return Err(ErrorCode::UuidMustBeExactly6Length.into());
         }
+
         candy_machine.data = data;
         candy_machine.wallet = *ctx.accounts.wallet.key;
         candy_machine.authority = *ctx.accounts.authority.key;
         candy_machine.config = ctx.accounts.config.key();
+        if let Some(whitelist) = whitelist_address {
+            candy_machine.whitelist = Some(whitelist);
+        }
         candy_machine.bump = bump;
+
         if ctx.remaining_accounts.len() > 0 {
             let token_mint_info = &ctx.remaining_accounts[0];
             let _token_mint: Mint = assert_initialized(&token_mint_info)?;
@@ -439,12 +473,79 @@ pub mod nft_candy_machine {
 
         Ok(())
     }
+
+    pub fn whitelist_add(ctx: Context<UpdateWhitelist>, entry: Pubkey) -> ProgramResult {
+        let whitelist = &mut ctx.accounts.whitelist;
+
+        if whitelist.addresses.len() >= WHITELIST_MAX_LEN {
+            return Err(ErrorCode::WhitelistIsFull.into());
+        }
+        if whitelist.addresses.contains(&entry) {
+            return Err(ErrorCode::AddressIsInWhitelist.into());
+        }
+        whitelist.addresses.push(entry);
+        Ok(())
+    }
+
+    pub fn whitelist_delete(ctx: Context<UpdateWhitelist>, entry: Pubkey) -> ProgramResult {
+        let whitelist = &mut ctx.accounts.whitelist;
+        if whitelist.addresses.contains(&entry) == false {
+            return Err(ErrorCode::AddressNotInWhitelist.into());
+        }
+        whitelist.addresses.retain(|e| e != &entry);
+        Ok(())
+    }
+
+    pub fn add_minting_whitelist(
+        ctx: Context<AddMintingWhitelist>,
+        whitelist: Vec<Pubkey>,
+    ) -> ProgramResult {
+        if whitelist.len() > WHITELIST_MAX_LEN {
+            return Err(ErrorCode::WhitelistToLarge.into());
+        }
+
+        let whitelist_account = &mut ctx.accounts.whitelist;
+        whitelist_account.addresses = whitelist;
+        whitelist_account.owner = ctx.accounts.owner.key();
+
+        Ok(())
+    }
+}
+
+pub const WHITELIST_MAX_LEN: usize = 500;
+const DISCRIMINATOR_BYTES: usize = 8;
+const PUBLIC_KEY_BYTES: usize = 32;
+const LENGTH_PREFIX_BYTES: usize = 4;
+pub const WHITELIST_RESERVED_BYTES: usize = DISCRIMINATOR_BYTES
+    + PUBLIC_KEY_BYTES
+    + LENGTH_PREFIX_BYTES
+    + WHITELIST_MAX_LEN * PUBLIC_KEY_BYTES;
+
+#[derive(Accounts)]
+pub struct AddMintingWhitelist<'info> {
+    #[account(zero)]
+    pub whitelist: ProgramAccount<'info, WhiteList>,
+    #[account(mut)]
+    pub owner: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateWhitelist<'info> {
+    #[account(mut, has_one = owner)]
+    whitelist: ProgramAccount<'info, WhiteList>,
+    owner: Signer<'info>,
+}
+
+#[account]
+pub struct WhiteList {
+    pub owner: Pubkey,
+    pub addresses: Vec<Pubkey>,
 }
 
 #[derive(Accounts)]
 #[instruction(bump: u8, data: CandyMachineData)]
 pub struct InitializeCandyMachine<'info> {
-    #[account(init, seeds=[PREFIX.as_bytes(), config.key().as_ref(), data.uuid.as_bytes()], payer=payer, bump=bump, space=8+32+32+33+32+64+64+64+200)]
+    #[account(init, seeds=[PREFIX.as_bytes(), config.key().as_ref(), data.uuid.as_bytes()], payer=payer, bump=bump, space=8+32+32+33+32+64+64+64+200+mem::size_of::<Option<Pubkey>>())]
     candy_machine: ProgramAccount<'info, CandyMachine>,
     #[account(constraint= wallet.owner == &spl_token::id() || (wallet.data_is_empty() && wallet.lamports() > 0) )]
     wallet: AccountInfo<'info>,
@@ -541,6 +642,7 @@ pub struct CandyMachine {
     pub data: CandyMachineData,
     pub items_redeemed: u64,
     pub bump: u8,
+    pub whitelist: Option<Pubkey>,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
@@ -657,4 +759,22 @@ pub enum ErrorCode {
     CandyMachineNotLiveYet,
     #[msg("Number of config lines must be at least number of items available")]
     ConfigLineMismatch,
+    #[msg("The address is not whitelisted for minting.")]
+    NotWhitelistedAddress,
+    #[msg("The whitelist is too large.")]
+    WhitelistToLarge,
+    #[msg("Could not remove the entry. The address is not in the whitelist.")]
+    AddressNotInWhitelist,
+    #[msg("Could not add the entry. The address is in the whitelist already.")]
+    AddressIsInWhitelist,
+    #[msg("The whitelist is full.")]
+    WhitelistIsFull,
+    #[msg(
+        "The whitelist account should be provided, as the candy machine has private-sale enabled."
+    )]
+    NoWhitelistAccountProvided,
+    #[msg("Invalid whitelist account provided.")]
+    InvalidWhitelistAccountProvideed,
+    #[msg("The candy machine whitelist address does not match provided whitelist address.")]
+    WhitelistAddressesDosNotMatch,
 }

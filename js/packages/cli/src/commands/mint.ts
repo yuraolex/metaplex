@@ -110,6 +110,14 @@ export async function mint(
   const metadataAddress = await getMetadata(mint.publicKey);
   const masterEdition = await getMasterEdition(mint.publicKey);
 
+  if (candyMachine.whitelist) {
+    remainingAccounts.push({
+      pubkey: candyMachine.whitelist,
+      isWritable: false,
+      isSigner: false,
+    });
+  }
+
   instructions.push(
     await anchorProgram.instruction.mintNft({
       accounts: {

@@ -28,6 +28,7 @@ import {
   loadCandyProgram,
   loadWalletKey,
   AccountAndPubkey,
+  addMintingWhitelist
 } from './helpers/accounts';
 import { Config } from './types';
 import { upload } from './commands/upload';
@@ -386,8 +387,8 @@ programCommand('verify')
             const thisSlice = config.data.slice(
               CONFIG_ARRAY_START + 4 + CONFIG_LINE_SIZE * allIndexesInSlice[i],
               CONFIG_ARRAY_START +
-                4 +
-                CONFIG_LINE_SIZE * (allIndexesInSlice[i] + 1),
+              4 +
+              CONFIG_LINE_SIZE * (allIndexesInSlice[i] + 1),
             );
             const name = fromUTF8Array([...thisSlice.slice(4, 36)]);
             const uri = fromUTF8Array([...thisSlice.slice(40, 240)]);
@@ -517,14 +518,12 @@ programCommand('verify')
     );
 
     log.info(
-      `uploaded (${lineCount.toNumber()}) out of (${
-        configData.data.maxNumberOfLines
+      `uploaded (${lineCount.toNumber()}) out of (${configData.data.maxNumberOfLines
       })`,
     );
     if (configData.data.maxNumberOfLines > lineCount.toNumber()) {
       throw new Error(
-        `predefined number of NFTs (${
-          configData.data.maxNumberOfLines
+        `predefined number of NFTs (${configData.data.maxNumberOfLines
         }) is smaller than the uploaded one (${lineCount.toNumber()})`,
       );
     } else {
@@ -636,7 +635,7 @@ programCommand('show')
         //@ts-ignore
         machine.data.goLiveDate
           ? //@ts-ignore
-            new Date(machine.data.goLiveDate * 1000)
+          new Date(machine.data.goLiveDate * 1000)
           : 'N/A',
       );
     } catch (e) {
@@ -782,6 +781,7 @@ programCommand('create_candy_machine')
         itemsAvailable: new anchor.BN(Object.keys(cacheContent.items).length),
         goLiveDate: null,
       },
+      null, //to construct whitelist, use addMintingWhitelist(anchorProgram, walletKeyPair, [whitelisted_adresses_array])
       {
         accounts: {
           candyMachine,

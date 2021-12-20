@@ -3,6 +3,8 @@ import {
   PublicKey,
   SystemProgram,
   AccountInfo,
+  Transaction,
+  sendAndConfirmTransaction
 } from '@solana/web3.js';
 import {
   CANDY_MACHINE,
@@ -637,3 +639,47 @@ function unsafeResAccounts(
     pubkey: item.pubkey,
   }));
 }
+
+export const addMintingWhitelist = async function (
+  anchorProgram: anchor.Program,
+  payerWallet: Keypair,
+  whitelistAddresses: Array<PublicKey>,
+) {
+  const whitelistAccount = Keypair.generate();
+  const WHITELIST_MAX_LEN = 500;
+  const DISCRIMINATOR_BYTES = 8;
+  const PUBLIC_KEY_BYTES = 32;
+  const LENGTH_PREFIX_BYTES = 4;
+  const WHITELIST_RESERVED_BYTES = DISCRIMINATOR_BYTES
+    + PUBLIC_KEY_BYTES
+    + LENGTH_PREFIX_BYTES
+    + WHITELIST_MAX_LEN * PUBLIC_KEY_BYTES;
+
+  try {
+    await anchorProgram.rpc.addMintingWhitelist(
+      whitelistAddresses,
+      {
+        accounts: {
+          whitelist: whitelistAccount.publicKey,
+          owner: payerWallet.publicKey
+        },
+        signers: [payerWallet, whitelistAccount],
+        instructions: [
+          SystemProgram.createAccount({
+            fromPubkey: payerWallet.publicKey,
+            lamports: await anchorProgram.provider.connection.getMinimumBalanceForRentExemption(WHITELIST_RESERVED_BYTES),
+            newAccountPubkey: whitelistAccount.publicKey,
+            programId: anchorProgram.programId,
+            space: WHITELIST_RESERVED_BYTES
+          })
+        ]
+      },
+    )
+  }
+  catch (e) {
+    log.error(e);
+    return new PublicKey("");
+  }
+  log.info('Whitelist account created ', whitelistAccount.publicKey.toBase58());
+  return whitelistAccount.publicKey;
+};
