@@ -508,7 +508,7 @@ pub mod nft_candy_machine {
         Ok(())
     }
 
-    pub fn whitelist_delete_multiple(
+    pub fn whitelist_remove_multiple(
         ctx: Context<UpdateWhitelist>,
         entries: Vec<Pubkey>,
     ) -> ProgramResult {
@@ -522,7 +522,7 @@ pub mod nft_candy_machine {
         Ok(())
     }
 
-    pub fn whitelist_delete(ctx: Context<UpdateWhitelist>, entry: Pubkey) -> ProgramResult {
+    pub fn whitelist_remove(ctx: Context<UpdateWhitelist>, entry: Pubkey) -> ProgramResult {
         let whitelist = &mut ctx.accounts.whitelist;
         if whitelist.addresses.contains(&entry) == false {
             return Err(ErrorCode::AddressNotInWhitelist.into());
@@ -531,8 +531,8 @@ pub mod nft_candy_machine {
         Ok(())
     }
 
-    pub fn add_minting_whitelist(
-        ctx: Context<AddMintingWhitelist>,
+    pub fn init_minting_whitelist(
+        ctx: Context<InitMintingWhitelist>,
         whitelist: Vec<Pubkey>,
     ) -> ProgramResult {
         if whitelist.len() > WHITELIST_MAX_LEN {
@@ -550,7 +550,7 @@ pub mod nft_candy_machine {
 pub const WHITELIST_MAX_LEN: usize = 1000;
 
 #[derive(Accounts)]
-pub struct AddMintingWhitelist<'info> {
+pub struct InitMintingWhitelist<'info> {
     #[account(zero)]
     pub whitelist: ProgramAccount<'info, WhiteList>,
     #[account(mut)]
