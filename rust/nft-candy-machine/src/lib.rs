@@ -474,6 +474,27 @@ pub mod nft_candy_machine {
         Ok(())
     }
 
+    pub fn whitelist_add_multiple(
+        ctx: Context<UpdateWhitelist>,
+        entries: Vec<Pubkey>,
+    ) -> ProgramResult {
+        let whitelist = &mut ctx.accounts.whitelist;
+
+        let addresses_len = whitelist.addresses.len();
+
+        if addresses_len >= WHITELIST_MAX_LEN {
+            return Err(ErrorCode::WhitelistIsFull.into());
+        }
+
+        let new_addresses_len = addresses_len + entries.len();
+        if new_addresses_len > WHITELIST_MAX_LEN {
+            return Err(ErrorCode::WhitelistToManyEntriesToAdd.into());
+        }
+
+        whitelist.addresses.extend(entries);
+        Ok(())
+    }
+
     pub fn whitelist_add(ctx: Context<UpdateWhitelist>, entry: Pubkey) -> ProgramResult {
         let whitelist = &mut ctx.accounts.whitelist;
 
@@ -484,6 +505,20 @@ pub mod nft_candy_machine {
             return Err(ErrorCode::AddressIsInWhitelist.into());
         }
         whitelist.addresses.push(entry);
+        Ok(())
+    }
+
+    pub fn whitelist_delete_multiple(
+        ctx: Context<UpdateWhitelist>,
+        entries: Vec<Pubkey>,
+    ) -> ProgramResult {
+        let whitelist = &mut ctx.accounts.whitelist;
+
+        if whitelist.addresses.len() < entries.len() {
+            return Err(ErrorCode::ToManyEntriesToRemoveFromWhitelist.into());
+        }
+
+        whitelist.addresses.retain(|e| entries.contains(e) == false);
         Ok(())
     }
 
@@ -512,14 +547,7 @@ pub mod nft_candy_machine {
     }
 }
 
-pub const WHITELIST_MAX_LEN: usize = 500;
-const DISCRIMINATOR_BYTES: usize = 8;
-const PUBLIC_KEY_BYTES: usize = 32;
-const LENGTH_PREFIX_BYTES: usize = 4;
-pub const WHITELIST_RESERVED_BYTES: usize = DISCRIMINATOR_BYTES
-    + PUBLIC_KEY_BYTES
-    + LENGTH_PREFIX_BYTES
-    + WHITELIST_MAX_LEN * PUBLIC_KEY_BYTES;
+pub const WHITELIST_MAX_LEN: usize = 1000;
 
 #[derive(Accounts)]
 pub struct AddMintingWhitelist<'info> {
@@ -537,6 +565,7 @@ pub struct UpdateWhitelist<'info> {
 }
 
 #[account]
+#[derive(Default)]
 pub struct WhiteList {
     pub owner: Pubkey,
     pub addresses: Vec<Pubkey>,
@@ -763,12 +792,16 @@ pub enum ErrorCode {
     NotWhitelistedAddress,
     #[msg("The whitelist is too large.")]
     WhitelistToLarge,
+    #[msg("Too many entries to remove from whitelist.")]
+    ToManyEntriesToRemoveFromWhitelist,
     #[msg("Could not remove the entry. The address is not in the whitelist.")]
     AddressNotInWhitelist,
     #[msg("Could not add the entry. The address is in the whitelist already.")]
     AddressIsInWhitelist,
     #[msg("The whitelist is full.")]
     WhitelistIsFull,
+    #[msg("Too many entries to add to whitelist.")]
+    WhitelistToManyEntriesToAdd,
     #[msg(
         "The whitelist account should be provided, as the candy machine has private-sale enabled."
     )]
