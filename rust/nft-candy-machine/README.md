@@ -242,3 +242,15 @@ await anchor.Program.instruction.mintNft({
   remainingAccounts,
 });
 ```
+
+## Integrations with website
+
+1. After creating candy machine, clone [candy-machine-mint]() example web app.
+1. run `yarn install`
+1. Open the `.env.example` file. And change enviorment variables based on cache file:
+   1. REACT_APP_CANDY_MACHINE_CONFIG=HLJVYSyF9shHXvsFXXEXhZzC9tTzG6cpFr4gn1MhzsZN - this could be found in `metaplex/.cache/{cluster-name}-temp.json` in object `{"program":{"uuid":"HLJVYS","config":"HLJVYSyF9shHXvsFXXEXhZzC9tTzG6cpFr4gn1MhzsZN"}, ..`.
+   1. REACT_APP_CANDY_MACHINE_ID=DNCVemRhoVRTr8TpWPxnRaoPMTMTEmzWYDwn7g3YQE3j - this could be found in `metaplex/.cache/{cluster-name}-temp.json` in field `...,"candyMachineAddress":"DNCVemRhoVRTr8TpWPxnRaoPMTMTEmzWYDwn7g3YQE3j",...`
+   1. REACT_APP_TREASURY_ADDRESS=9YziGgwWcT...VopuZkiPKw7y - this is publicc address of your wallet, that is authority for candy machine
+   1. REACT_APP_CANDY_START_DATE=1640235600 - start date of candy machine, could be found in `metaplex/.cache/{cluster-name}-temp.json` in field `...,"startDate":1640235600}`
+1. Than run `yarn start` to start website for minting.
+
