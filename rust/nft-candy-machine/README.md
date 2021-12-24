@@ -9,7 +9,38 @@
 1. Run  `anchor idl init --filepath {path-to-metaplex}/metaplex/rust/target/idl/nft_candy_machine.json {candy_machine_pubkey}`
    1. Run  `anchor idl upgrade --filepath {path-to-metaplex}/metaplex/rust/target/idl/nft_candy_machine.json {candy_machine_pubkey}` if candy machine alredy uploaded.
 
-## How to Use Deploied Contract
+## How to Create Candy Machine using CLI
+
+Use the same repo from [GitHub](https://github.com/yuraolex/metaplex) to build and run CLI commands. Candy machine cli located in `metaplex/js/packages/cli/src/candy-machine-cli.ts`.
+
+1. Before creating candy machine, assets should be prepared. All assets should have related `json` metadata files.
+1. To upload prepared assets and related metadata, use `candy-machine-cli.ts upload` command from metaplex project. Use `-s` or `--storage` to select database that will be used for storage (`arweave-bundle`, `arweave-sol`,`arweave`, `ipfs`, `aws`). Default: `arweave-sol`.  Use `-h` option to see all possible options for this command.
+1. To create new candy machine, that will handle our assets as NFTs, use `candy-machine-cli.ts create_candy_machine`. To enable private sale, use `-w` or `--whitelist` option and pass as second parameter file with whitelisted addresses, separated by coma. It is possible to add maximum 1000 addresess to whitelist. Use `-h` option to see all possible options for this command.
+1. After candy machine was successfuly created, use `candy-machine-cli.ts update_candy_machine` to update price with `-p` or `--price` option and set start sale date with `-d` or `--date` option. Use `-h` option to see all possible options for this command. Date should be in format `"14 Nov 2021 00:00:00 EST"`.
+
+```cl
+~ ts-node {path-to-metaplex}/metaplex/js/packages/cli/src/candy-machine-cli.ts upload {path-to-assets}/assets --storage arweave --env devnet --keypair {path-to-wallet}/devnet.json
+
+~ ts-node {path-to-metaplex}/metaplex/js/packages/cli/src/candy-machine-cli.ts create_candy_machine --env devnet --keypair {path-to-wallet}/devnet.json --whitelist {path-to-whitelist-file}/whitelist.csv
+
+~ ts-node {path-to-metaplex}/metaplex/js/packages/cli/src/candy-machine-cli.ts update_candy_machine --keypair {path-to-wallet}/devnet.json --price 0.5 --date "14 Nov 2021 00:00:00 EST"
+
+```
+### Whitelist file example
+
+```
+
+AfMymK6UXLMX6N8poHrbqusxtcWCcjH8rPfRTbMGQmup,
+VVMtyH4sVYs9AJL2qhQwbvq9g7Cedny3D6JCeRQY3nZ,
+GfyAPMytYmKVe7LJqX1TTiEHFLPYCBsCFC3MFikA24qe,
+2pHvfroXp4fKp5JE8HKxgwSEVBpA5f85LHwbN415t972,
+GdawPh99KPfN9GWaHjDRsJmptBfpHhSzUeFrz3jv9uzS,
+2zPaA2wTzrGyVKDTZSTEA2JkZaPURKKaHqNxBW5KKSQM,
+...
+
+```
+
+## How to Use Deployed Contract in Web App
 
 ### How to Create Whitelist 
 
@@ -18,8 +49,9 @@ To create whitelist, follow next steps:
 * The maximum number of adresses that could be in array is 1000. This is predefined constant by us, so if it needs to be changed, it also needs to be changed in contract. We should set it, as Solana should know upfront what size we want to store in account (see `WHITELIST_RESERVED_BYTES` below). 
 * The keypair(publick and secret keys) should be generatetd for new whitelist data account(see `whitelistAccount`).
 * Call `anchor.Program.rpc.initMintingWhitelist()` instruction with parameters to fill in the list(see `await anchorProgram.rpc.initMintingWhitelist` example below).
-  * **NOTE**, that transaction to Solana network is limited in size, so the maximum size of serialized transaction could be only `1232` byte. Thats mean that we could not put entire huge array of `whitelistAddresses` as `initMintingWhitelist` argument if its size biger than `26` elements. If there are more than `26` elements in array, take first 26 to pass as arguments in this transaction, and send other elements using `whitelistAddMultiple` instructions. See [Edit entries in whitelist](#edit-entries-in-the-whitelist) for more info.
-  * The `payer` variable has `Keypair` type. 
+  * **NOTE**: Transaction to Solana network is limited in size, so the maximum size of serialized transaction could be only `1232` byte. Thats mean that we could not put entire huge array of `whitelistAddresses` as `initMintingWhitelist` argument if its size biger than `26` elements. If there are more than `26` elements in array, take first 26 to pass as arguments in this transaction, and send other elements using `whitelistAddMultiple` instructions. See [Edit entries in whitelist](#edit-entries-in-the-whitelist) for more info.
+  * The `payer` variable has `Keypair` type.
+  * **NOTE**: Be sure to check `whitelistAddresses` array for duplicates adresses upfront, before passing to contract instruction.
 
 
 ```ts
@@ -106,6 +138,8 @@ It is possible to extend range of addresses by adding addresses to whitelist or 
 1. `whitelistDeleteMultiple` to remove the array of addresses from the whitelist. It is possible to remove only `28` addresses in one transaction due to transaction limitation, so if array of addresses is bigger, split for smaller chanks and do this instaction multiple times.  **NOTE:** the restriction number of addresses is not the same for different instructions, as it depends from number of arguments.
 
 In `accounts` object the whitelist public key and the owner public key of whitelist should be spceified. The owner of whitelist should also sign the transaction. See examples below.
+
+**NOTE**: Be sure to check array of adresses for duplicates upfront, before adding them to contract. Also check updront if this addresses are not in whiotelist already. To fetch whitelist addressdes use `const wh_account = await anchor.Program.account.whiteList.fetch(whitelistAccount.publicKey); const wh_addresses = wh_account.addresses;`
 
 ```ts
 

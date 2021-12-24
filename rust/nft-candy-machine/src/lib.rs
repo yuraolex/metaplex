@@ -48,11 +48,17 @@ pub mod nft_candy_machine {
                     return Err(ErrorCode::WhitelistAddressesDosNotMatch.into());
                 }
 
+                if candy_machine.authority != whitelist.owner {
+                    return Err(ErrorCode::WhitelistOwnerInvalid.into());
+                }
+
                 if whitelist.addresses.is_empty() == false {
                     let update_authority = ctx.accounts.update_authority.key;
                     if whitelist.addresses.contains(update_authority) == false {
                         return Err(ErrorCode::NotWhitelistedAddress.into());
                     }
+                } else {
+                    return Err(ErrorCode::WhitelistIsEmpty.into());
                 }
             } else {
                 return Err(ErrorCode::NoWhitelistAccountProvided.into());
@@ -524,6 +530,7 @@ pub mod nft_candy_machine {
 
     pub fn whitelist_remove(ctx: Context<UpdateWhitelist>, entry: Pubkey) -> ProgramResult {
         let whitelist = &mut ctx.accounts.whitelist;
+
         if whitelist.addresses.contains(&entry) == false {
             return Err(ErrorCode::AddressNotInWhitelist.into());
         }
@@ -810,4 +817,8 @@ pub enum ErrorCode {
     InvalidWhitelistAccountProvideed,
     #[msg("The candy machine whitelist address does not match provided whitelist address.")]
     WhitelistAddressesDosNotMatch,
+    #[msg("Whitelist account owner is not the same as the candy machine owner.")]
+    WhitelistOwnerInvalid,
+    #[msg("Private sale enabled but the whitelist is empty. Add some addresses to start minting.")]
+    WhitelistIsEmpty,
 }

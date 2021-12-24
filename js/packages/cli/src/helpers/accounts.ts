@@ -3,8 +3,6 @@ import {
   PublicKey,
   SystemProgram,
   AccountInfo,
-  Transaction,
-  sendAndConfirmTransaction
 } from '@solana/web3.js';
 import {
   CANDY_MACHINE,
@@ -638,6 +636,19 @@ function unsafeResAccounts(
     account: unsafeAccount(item.account),
     pubkey: item.pubkey,
   }));
+
+
+
+
+}
+
+function sliceIntoChunks(arr: Array<any>, chunkSize: number) {
+  const res = [];
+  for (let i = 0; i < arr.length; i += chunkSize) {
+    const chunk = arr.slice(i, i + chunkSize);
+    res.push(chunk);
+  }
+  return res;
 }
 
 export const addMintingWhitelist = async function (
@@ -645,41 +656,65 @@ export const addMintingWhitelist = async function (
   payerWallet: Keypair,
   whitelistAddresses: Array<PublicKey>,
 ) {
-  const whitelistAccount = Keypair.generate();
-  const WHITELIST_MAX_LEN = 500;
-  const DISCRIMINATOR_BYTES = 8;
-  const PUBLIC_KEY_BYTES = 32;
-  const LENGTH_PREFIX_BYTES = 4;
-  const WHITELIST_RESERVED_BYTES = DISCRIMINATOR_BYTES
-    + PUBLIC_KEY_BYTES
-    + LENGTH_PREFIX_BYTES
-    + WHITELIST_MAX_LEN * PUBLIC_KEY_BYTES;
+  if (whitelistAddresses.length === 0) {
+    log.info(`Whitelist file should have addresses.`);
+    return new PublicKey("");
+  }
 
-  try {
-    await anchorProgram.rpc.addMintingWhitelist(
-      whitelistAddresses,
+  const whitelistAccount = Keypair.generate();
+  const WHITELIST_RESERVED_BYTES = 8 //DISCRIMINATOR_BYTES
+    + 8 // PUBLIC_KEY_BYTES
+    + 4 // LENGTH_PREFIX_BYTES
+    + 1000 * 32; // WHITELIST_MAX_LEN * PUBLIC_KEY_BYTES
+
+  const MAX_INIT_CHUNK_SIZE = 26;
+  const initAddressesChunk = whitelistAddresses.splice(0, MAX_INIT_CHUNK_SIZE);
+
+  await anchorProgram.rpc.initMintingWhitelist(
+    initAddressesChunk,
+    {
+      accounts: {
+        whitelist: whitelistAccount.publicKey,
+        owner: payerWallet.publicKey,
+      },
+      signers: [payerWallet, whitelistAccount],
+      instructions: [
+        SystemProgram.createAccount({
+          fromPubkey: payerWallet.publicKey,
+          lamports: await anchorProgram.provider.connection.getMinimumBalanceForRentExemption(WHITELIST_RESERVED_BYTES),
+          newAccountPubkey: whitelistAccount.publicKey,
+          programId: anchorProgram.programId,
+          space: WHITELIST_RESERVED_BYTES
+        })
+      ]
+    },
+  );
+
+  log.info("Whitelist was created with address ", payerWallet.publicKey.toBase58());
+
+  const uniqueWhitelistAddresses = whitelistAddresses.filter(function (elem, index, self) {
+    return index === self.indexOf(elem);
+  });
+
+  const MAX_CHUNK_SIZE = 29;
+  const tx_chunks = sliceIntoChunks(uniqueWhitelistAddresses, MAX_CHUNK_SIZE);
+
+  log.info("Total number of chunks to upload: ", tx_chunks.length);
+
+  for (let index = 0; index < tx_chunks.length; ++index) {
+    log.info("Upload chunk number ", index);
+
+    await anchorProgram.rpc.whitelistAddMultiple(
+      tx_chunks[index],
       {
         accounts: {
           whitelist: whitelistAccount.publicKey,
-          owner: payerWallet.publicKey
+          owner: payerWallet.publicKey,
         },
-        signers: [payerWallet, whitelistAccount],
-        instructions: [
-          SystemProgram.createAccount({
-            fromPubkey: payerWallet.publicKey,
-            lamports: await anchorProgram.provider.connection.getMinimumBalanceForRentExemption(WHITELIST_RESERVED_BYTES),
-            newAccountPubkey: whitelistAccount.publicKey,
-            programId: anchorProgram.programId,
-            space: WHITELIST_RESERVED_BYTES
-          })
-        ]
-      },
-    )
+        signers: [payerWallet]
+      }
+    );
   }
-  catch (e) {
-    log.error(e);
-    return new PublicKey("");
-  }
-  log.info('Whitelist account created ', whitelistAccount.publicKey.toBase58());
+
   return whitelistAccount.publicKey;
 };

@@ -690,6 +690,10 @@ programCommand('create_candy_machine')
     '-r, --rpc-url <string>',
     'custom rpc url since this is a heavy command',
   )
+  .option(
+    '-w, --whitelist <path>',
+    'CSV file with whitelisted adresses',
+  )
   .action(async (directory, cmd) => {
     const {
       keypair,
@@ -700,6 +704,7 @@ programCommand('create_candy_machine')
       splTokenAccount,
       solTreasuryAccount,
       rpcUrl,
+      whitelist,
     } = cmd.opts();
 
     let parsedPrice = parsePrice(price);
@@ -773,6 +778,20 @@ programCommand('create_candy_machine')
       config,
       cacheContent.program.uuid,
     );
+
+    let whitelistAddress = null;
+    if (whitelist && whitelist.length > 0) {
+      const addresses = fs.readFileSync(whitelist).toString().replace(/(\r\n|\n|\r|\s)/gm, "").split(',').filter(address => address.length > 0);
+      const publicKeys: Array<PublicKey> = addresses.map(address => new PublicKey(address));
+
+      if (publicKeys.length === 0) {
+        log.error(`Whitelist file is empty.`);
+        return;
+      }
+
+      whitelistAddress = await addMintingWhitelist(anchorProgram, walletKeyPair, publicKeys);
+    }
+
     await anchorProgram.rpc.initializeCandyMachine(
       bump,
       {
@@ -781,7 +800,7 @@ programCommand('create_candy_machine')
         itemsAvailable: new anchor.BN(Object.keys(cacheContent.items).length),
         goLiveDate: null,
       },
-      null, //to construct whitelist, use addMintingWhitelist(anchorProgram, walletKeyPair, [whitelisted_adresses_array])
+      whitelistAddress,
       {
         accounts: {
           candyMachine,
@@ -796,6 +815,7 @@ programCommand('create_candy_machine')
         remainingAccounts,
       },
     );
+
     cacheContent.candyMachineAddress = candyMachine.toBase58();
     saveCache(cacheName, env, cacheContent);
     log.info(
