@@ -690,10 +690,6 @@ programCommand('create_candy_machine')
     '-r, --rpc-url <string>',
     'custom rpc url since this is a heavy command',
   )
-  .option(
-    '-w, --whitelist <path>',
-    'CSV file with whitelisted adresses',
-  )
   .action(async (directory, cmd) => {
     const {
       keypair,
@@ -704,7 +700,6 @@ programCommand('create_candy_machine')
       splTokenAccount,
       solTreasuryAccount,
       rpcUrl,
-      whitelist,
     } = cmd.opts();
 
     let parsedPrice = parsePrice(price);
@@ -779,19 +774,6 @@ programCommand('create_candy_machine')
       cacheContent.program.uuid,
     );
 
-    let whitelistAddress = null;
-    if (whitelist && whitelist.length > 0) {
-      const addresses = fs.readFileSync(whitelist).toString().replace(/(\r\n|\n|\r|\s)/gm, "").split(',').filter(address => address.length > 0);
-      const publicKeys: Array<PublicKey> = addresses.map(address => new PublicKey(address));
-
-      if (publicKeys.length === 0) {
-        log.error(`Whitelist file is empty.`);
-        return;
-      }
-
-      whitelistAddress = await addMintingWhitelist(anchorProgram, walletKeyPair, publicKeys);
-    }
-
     await anchorProgram.rpc.initializeCandyMachine(
       bump,
       {
@@ -800,7 +782,6 @@ programCommand('create_candy_machine')
         itemsAvailable: new anchor.BN(Object.keys(cacheContent.items).length),
         goLiveDate: null,
       },
-      whitelistAddress,
       {
         accounts: {
           candyMachine,
@@ -834,8 +815,12 @@ programCommand('update_candy_machine')
     'custom rpc url since this is a heavy command',
   )
   .option('--new-authority <Pubkey>', 'New Authority. Base58-encoded')
+  .option(
+    '-w, --whitelist <path>',
+    'CSV file with whitelisted adresses',
+  )
   .action(async (directory, cmd) => {
-    const { keypair, env, date, rpcUrl, price, newAuthority, cacheName } =
+    const { keypair, env, date, rpcUrl, price, newAuthority, cacheName, whitelist } =
       cmd.opts();
     const cacheContent = loadCache(cacheName, env);
 
@@ -848,15 +833,36 @@ programCommand('update_candy_machine')
 
     const candyMachine = new PublicKey(cacheContent.candyMachineAddress);
 
-    if (lamports || secondsSinceEpoch) {
+    if (lamports || secondsSinceEpoch || whitelist) {
+      const remainingAccounts = [];
+      const isPublicSale = whitelist && whitelist.length > 0 ? true : false;
+      if (isPublicSale) {
+        const addresses = fs.readFileSync(whitelist).toString().replace(/(\r\n|\n|\r|\s)/gm, "").split(',').filter(address => address.length > 0);
+        const publicKeys: Array<PublicKey> = addresses.map(address => new PublicKey(address));
+
+        if (publicKeys.length === 0) {
+          log.error(`Whitelist file is empty.`);
+          return;
+        }
+
+        const whitelistAddress = await addMintingWhitelist(anchorProgram, walletKeyPair, publicKeys);
+        remainingAccounts.push({
+          pubkey: whitelistAddress,
+          isWritable: false,
+          isSigner: false,
+        });
+      }
+
       const tx = await anchorProgram.rpc.updateCandyMachine(
         lamports ? new anchor.BN(lamports) : null,
         secondsSinceEpoch ? new anchor.BN(secondsSinceEpoch) : null,
+        whitelist ? isPublicSale : null,
         {
           accounts: {
             candyMachine,
             authority: walletKeyPair.publicKey,
           },
+          remainingAccounts
         },
       );
 

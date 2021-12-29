@@ -15,11 +15,12 @@ use {
         },
     },
     spl_token::state::Mint,
-    std::{cell::Ref, mem},
+    std::{cell::Ref, mem, result::Result as CandyMachineResult},
 };
 anchor_lang::declare_id!("BKYuLvhWdJjJctATHxi9VL1eUTzQnv1dK5zTVGSayiZi");
 
 const PREFIX: &str = "candy_machine";
+
 #[program]
 pub mod nft_candy_machine {
     use anchor_lang::solana_program::{
@@ -33,35 +34,23 @@ pub mod nft_candy_machine {
         let candy_machine = &mut ctx.accounts.candy_machine;
 
         if let Some(whitelist_address) = candy_machine.whitelist.clone() {
-            let ra_len = ctx.remaining_accounts.len();
-            if ra_len > 0 {
-                let whitelist_info = match ctx.remaining_accounts.get(ra_len - 1) {
-                    Some(acc_info) => acc_info,
-                    None => return Err(ErrorCode::NoWhitelistAccountProvided.into()),
-                };
-                let whitelist = match Account::<WhiteList>::try_from(whitelist_info) {
-                    Ok(whitelist_account) => whitelist_account,
-                    _ => return Err(ErrorCode::InvalidWhitelistAccountProvideed.into()),
-                };
+            let whitelist = extract_whitelist_account(ctx.remaining_accounts)?;
 
-                if whitelist.key() != whitelist_address {
-                    return Err(ErrorCode::WhitelistAddressesDosNotMatch.into());
-                }
+            if whitelist.key() != whitelist_address {
+                return Err(ErrorCode::WhitelistAddressesDosNotMatch.into());
+            }
 
-                if candy_machine.authority != whitelist.owner {
-                    return Err(ErrorCode::WhitelistOwnerInvalid.into());
-                }
+            if candy_machine.authority != whitelist.owner {
+                return Err(ErrorCode::WhitelistOwnerInvalid.into());
+            }
 
-                if whitelist.addresses.is_empty() == false {
-                    let update_authority = ctx.accounts.update_authority.key;
-                    if whitelist.addresses.contains(update_authority) == false {
-                        return Err(ErrorCode::NotWhitelistedAddress.into());
-                    }
-                } else {
-                    return Err(ErrorCode::WhitelistIsEmpty.into());
+            if whitelist.addresses.is_empty() == false {
+                let update_authority = ctx.accounts.update_authority.key;
+                if whitelist.addresses.contains(update_authority) == false {
+                    return Err(ErrorCode::NotWhitelistedAddress.into());
                 }
             } else {
-                return Err(ErrorCode::NoWhitelistAccountProvided.into());
+                return Err(ErrorCode::WhitelistIsEmpty.into());
             }
         }
 
@@ -252,6 +241,7 @@ pub mod nft_candy_machine {
         ctx: Context<UpdateCandyMachine>,
         price: Option<u64>,
         go_live_date: Option<i64>,
+        private_sale: Option<bool>,
     ) -> ProgramResult {
         let candy_machine = &mut ctx.accounts.candy_machine;
 
@@ -263,6 +253,11 @@ pub mod nft_candy_machine {
             msg!("Go live date changed to {}", go_l);
             candy_machine.data.go_live_date = Some(go_l)
         }
+
+        if let Some(p_s) = private_sale {
+            change_private_sale(candy_machine, ctx.remaining_accounts, p_s)?;
+        }
+
         Ok(())
     }
 
@@ -405,7 +400,6 @@ pub mod nft_candy_machine {
         ctx: Context<InitializeCandyMachine>,
         bump: u8,
         data: CandyMachineData,
-        whitelist_address: Option<Pubkey>,
     ) -> ProgramResult {
         let candy_machine = &mut ctx.accounts.candy_machine;
 
@@ -417,9 +411,6 @@ pub mod nft_candy_machine {
         candy_machine.wallet = *ctx.accounts.wallet.key;
         candy_machine.authority = *ctx.accounts.authority.key;
         candy_machine.config = ctx.accounts.config.key();
-        if let Some(whitelist) = whitelist_address {
-            candy_machine.whitelist = Some(whitelist);
-        }
         candy_machine.bump = bump;
 
         if ctx.remaining_accounts.len() > 0 {
@@ -459,6 +450,14 @@ pub mod nft_candy_machine {
         let candy_machine = &mut ctx.accounts.candy_machine;
 
         if let Some(new_auth) = new_authority {
+            if let Some(whitelist_address) = candy_machine.whitelist.clone() {
+                let mut whitelist = extract_whitelist_account(ctx.remaining_accounts)?;
+                if whitelist.key() != whitelist_address {
+                    return Err(ErrorCode::WhitelistAddressesDosNotMatch.into());
+                }
+                whitelist.owner = new_auth;
+            }
+
             candy_machine.authority = new_auth;
         }
 
@@ -746,6 +745,44 @@ pub fn get_config_line(
     Ok(config_line)
 }
 
+fn extract_whitelist_account<'info>(
+    remaining_accounts: &[AccountInfo<'info>],
+) -> CandyMachineResult<Account<'info, WhiteList>, ProgramError> {
+    let ra_len = remaining_accounts.len();
+    if ra_len > 0 {
+        let whitelist_info = match remaining_accounts.get(ra_len - 1) {
+            Some(acc_info) => acc_info,
+            None => return Err(ErrorCode::NoWhitelistAccountProvided.into()),
+        };
+        let whitelist = match Account::<WhiteList>::try_from(whitelist_info) {
+            Ok(whitelist_account) => whitelist_account,
+            _ => return Err(ErrorCode::InvalidWhitelistAccountProvideed.into()),
+        };
+
+        Ok(whitelist)
+    } else {
+        return Err(ErrorCode::NoWhitelistAccountProvided.into());
+    }
+}
+
+fn change_private_sale(
+    candy_machine: &mut ProgramAccount<CandyMachine>,
+    remaining_accounts: &[AccountInfo],
+    private_sale: bool,
+) -> ProgramResult {
+    if private_sale {
+        let whitelist = extract_whitelist_account(remaining_accounts)?;
+        if candy_machine.authority != whitelist.owner {
+            return Err(ErrorCode::WhitelistOwnerInvalid.into());
+        }
+
+        candy_machine.whitelist = Some(whitelist.key());
+    } else {
+        candy_machine.whitelist = None;
+    }
+    Ok(())
+}
+
 pub const CONFIG_LINE_SIZE: usize = 4 + MAX_NAME_LENGTH + 4 + MAX_URI_LENGTH;
 #[derive(AnchorSerialize, AnchorDeserialize, Debug)]
 pub struct ConfigLine {
@@ -809,9 +846,7 @@ pub enum ErrorCode {
     WhitelistIsFull,
     #[msg("Too many entries to add to whitelist.")]
     WhitelistToManyEntriesToAdd,
-    #[msg(
-        "The whitelist account should be provided, as the candy machine has private-sale enabled."
-    )]
+    #[msg("The whitelist account should be provided for private-sale.")]
     NoWhitelistAccountProvided,
     #[msg("Invalid whitelist account provided.")]
     InvalidWhitelistAccountProvideed,
