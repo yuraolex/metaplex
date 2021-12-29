@@ -22,9 +22,9 @@ Use the same repo from [GitHub](https://github.com/yuraolex/metaplex) to build a
 ```cl
 ~ ts-node {path-to-metaplex}/metaplex/js/packages/cli/src/candy-machine-cli.ts upload {path-to-assets}/assets --storage arweave --env devnet --keypair {path-to-wallet}/devnet.json
 
-~ ts-node {path-to-metaplex}/metaplex/js/packages/cli/src/candy-machine-cli.ts create_candy_machine --env devnet --keypair {path-to-wallet}/devnet.json --whitelist {path-to-whitelist-file}/whitelist.csv
+~ ts-node {path-to-metaplex}/metaplex/js/packages/cli/src/candy-machine-cli.ts create_candy_machine --env devnet --keypair {path-to-wallet}/devnet.json
 
-~ ts-node {path-to-metaplex}/metaplex/js/packages/cli/src/candy-machine-cli.ts update_candy_machine --keypair {path-to-wallet}/devnet.json --price 0.5 --date "14 Nov 2021 00:00:00 EST"
+~ ts-node {path-to-metaplex}/metaplex/js/packages/cli/src/candy-machine-cli.ts update_candy_machine --keypair {path-to-wallet}/devnet.json --price 0.5 --date "14 Nov 2021 00:00:00 EST" --whitelist {path-to-whitelist-file}/whitelist.csv
 
 ```
 
